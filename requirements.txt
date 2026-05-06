@@ -1,0 +1,14 @@
+torch>=2.11
+torchvision
+numpy
+scipy
+scikit-learn
+tifffile
+Pillow
+matplotlib
+pandas
+tabulate
+tqdm
+jupyter
+ipykernel
+nbformat

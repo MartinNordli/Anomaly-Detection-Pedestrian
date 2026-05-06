@@ -1,0 +1,11 @@
+cache/
+checkpoints/
+results/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+._*
+.venv/
+venv/
+UCSD_Anomaly_Dataset.v1p2
