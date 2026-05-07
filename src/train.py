@@ -88,6 +88,10 @@ def train_predictor(
     device = device or pick_device()
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
+    use_amp = device.type == "cuda"
+    pin_memory = device.type == "cuda"
 
     spec = VARIANTS[variant]
     full = UCSDPredictionDataset(dataset_root, cache_root, ped, "Train",
@@ -104,11 +108,12 @@ def train_predictor(
     train_loader = DataLoader(
         train_ds, batch_size=cfg.batch_size, shuffle=True,
         num_workers=cfg.num_workers, persistent_workers=cfg.num_workers > 0,
-        drop_last=True,
+        drop_last=True, pin_memory=pin_memory,
     )
     val_loader = DataLoader(
         val_ds, batch_size=cfg.batch_size, shuffle=False,
         num_workers=cfg.num_workers, persistent_workers=cfg.num_workers > 0,
+        pin_memory=pin_memory,
     )
 
     model = UNetPredictor(in_channels=full.in_channels,
@@ -122,6 +127,7 @@ def train_predictor(
 
     optim = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     crit = PredictionLoss(lambda_grad=cfg.lambda_grad)
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     best_val = float("inf")
     bad_epochs = 0
@@ -142,11 +148,13 @@ def train_predictor(
             target = target.to(device, non_blocking=True)
             if cfg.augment:
                 stack, target = _augment(stack, target)
-            pred = model(stack)
-            loss = crit(pred, target)
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
+            optim.zero_grad(set_to_none=True)
+            with torch.amp.autocast("cuda", dtype=torch.float16, enabled=use_amp):
+                pred = model(stack)
+                loss = crit(pred, target)
+            scaler.scale(loss).backward()
+            scaler.step(optim)
+            scaler.update()
             train_loss_sum += float(loss.detach()) * stack.size(0)
             n_train += stack.size(0)
         train_loss = train_loss_sum / max(n_train, 1)
@@ -154,7 +162,7 @@ def train_predictor(
         model.eval()
         val_loss_sum = 0.0
         n_val = 0
-        with torch.no_grad():
+        with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.float16, enabled=use_amp):
             for stack, target in val_loader:
                 stack = stack.to(device, non_blocking=True)
                 target = target.to(device, non_blocking=True)

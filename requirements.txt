@@ -1,6 +1,4 @@
-torch>=2.11
-torchvision
-numpy
+numpy<2
 scipy
 scikit-learn
 tifffile

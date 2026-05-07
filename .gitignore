@@ -9,3 +9,4 @@ __pycache__/
 .venv/
 venv/
 UCSD_Anomaly_Dataset.v1p2
+datasets/
