@@ -29,6 +29,7 @@ class RpcaInfo:
     rank: int
     sparsity: float
     wall_time_s: float
+    history: list[float] | None = None
 
 
 def _shrink(x: np.ndarray, tau: float) -> np.ndarray:
@@ -45,6 +46,7 @@ def rpca_ialm(
     rsvd_oversamples: int = 10,
     rsvd_n_iter: int = 2,
     verbose: bool = False,
+    record_history: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, RpcaInfo]:
     """Decompose X into low-rank L and sparse S via Inexact ALM with rSVD.
 
@@ -87,6 +89,7 @@ def rpca_ialm(
 
     t0 = time.perf_counter()
     final_residual = float("inf")
+    history: list[float] | None = [] if record_history else None
     it = 0
     for it in range(1, max_iter + 1):
         # --- L update: SVT on (X - S + Y/mu) at threshold 1/mu ---
@@ -120,6 +123,8 @@ def rpca_ialm(
 
         rel = float(np.linalg.norm(residual) / norm_X)
         final_residual = rel
+        if history is not None:
+            history.append(rel)
         if verbose and (it % 10 == 0 or it == 1):
             print(f"iter {it:3d}  rel={rel:.2e}  rank={keep}  mu={mu:.3g}")
         if rel < tol:
@@ -133,6 +138,7 @@ def rpca_ialm(
         rank=rank,
         sparsity=sparsity,
         wall_time_s=time.perf_counter() - t0,
+        history=history,
     )
     return L, S, info
 

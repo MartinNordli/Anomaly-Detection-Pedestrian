@@ -83,6 +83,38 @@ def score_clip(
     return full, labels
 
 
+@torch.no_grad()
+def pixel_residual(
+    model: torch.nn.Module,
+    dataset: UCSDPredictionDataset,
+    clip_idx: int,
+    frame_idx: int,
+    device: torch.device,
+) -> np.ndarray:
+    """Per-pixel L1 prediction error on a single (clip, target-frame).
+
+    Returns a (H, W) float32 array. ``frame_idx`` is the target frame index
+    (must be ≥ ``dataset.window`` since the model needs ``window`` past frames).
+    """
+    if frame_idx < dataset.window:
+        raise ValueError(
+            f"frame_idx={frame_idx} < window={dataset.window}; "
+            "no input history available for this frame."
+        )
+    matches = [i for i, (ci, t) in enumerate(dataset._index)
+               if ci == clip_idx and t == frame_idx]
+    if not matches:
+        raise IndexError(f"no dataset index for clip_idx={clip_idx}, frame_idx={frame_idx}")
+    item = dataset[matches[0]]
+    stack, target = item[0], item[1]
+    x = stack.unsqueeze(0).to(device, non_blocking=True)
+    y = target.unsqueeze(0).to(device, non_blocking=True)
+    model.eval()
+    pred = model(x)
+    err = (pred - y).abs().squeeze(0).mean(dim=0).detach().cpu().numpy()
+    return err.astype(np.float32)
+
+
 def _normalize_and_smooth(scores: np.ndarray, sigma: float = 2.0) -> np.ndarray:
     smoothed = gaussian_filter1d(scores.astype(np.float32), sigma=sigma)
     s_min, s_max = float(smoothed.min()), float(smoothed.max())
